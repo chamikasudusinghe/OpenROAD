@@ -439,8 +439,7 @@ void TritonRoute::applyUpdates(
               frPathSeg updatedSeg = update.getPathSeg();
               seg->setPoints(updatedSeg.getBeginPoint(),
                              updatedSeg.getEndPoint());
-              frSegStyle style;
-              updatedSeg.getStyle(style);
+              frSegStyle style = updatedSeg.getStyle();
               seg->setStyle(style);
               regionQuery->addDRObj(seg);
               break;
@@ -484,8 +483,10 @@ bool TritonRoute::initGuide()
 }
 void TritonRoute::initDesign()
 {
-  if (getDesign()->getTopBlock() != nullptr)
+  if (getDesign()->getTopBlock() != nullptr) {
+    getDesign()->getTopBlock()->removeDeletedInsts();
     return;
+  }
   io::Parser parser(db_, getDesign(), logger_);
   parser.readDb();
   auto tech = getDesign()->getTech();
@@ -964,8 +965,7 @@ void TritonRoute::reportDRC(const string& file_name, FlexDRWorker* worker)
   if (drcRpt.is_open()) {
     for (auto& marker : getDesign()->getTopBlock()->getMarkers()) {
       // get violation bbox
-      Rect bbox;
-      marker->getBBox(bbox);
+      Rect bbox = marker->getBBox();
       if (worker != nullptr && !worker->getDrcBox().intersects(bbox))
         continue;
       auto tech = getDesign()->getTech();
@@ -1167,12 +1167,7 @@ void TritonRoute::reportDRC(const string& file_name, FlexDRWorker* worker)
       drcRpt << "    bbox = ( " << bbox.xMin() / dbu << ", "
              << bbox.yMin() / dbu << " ) - ( " << bbox.xMax() / dbu << ", "
              << bbox.yMax() / dbu << " ) on Layer ";
-      if (layerType == dbTechLayerType::CUT
-          && marker->getLayerNum() - 1 >= tech->getBottomLayerNum()) {
-        drcRpt << tech->getLayer(marker->getLayerNum() - 1)->getName() << "\n";
-      } else {
-        drcRpt << layer->getName() << "\n";
-      }
+      drcRpt << layer->getName() << "\n";
     }
   } else {
     cout << "Error: Fail to open DRC report file\n";
