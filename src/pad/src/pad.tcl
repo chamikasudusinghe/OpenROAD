@@ -204,7 +204,8 @@ proc define_pad_cell {args} {
       if {[dict exists $args "-type"]} {
         utl::error PAD 208 "Type option already set to [dict get $args -type], option $flag cannot be used to reset the type."
       }
-      dict set args -type [regsub -- {\-} $flag {}]
+      #dict set args -type [regsub -- {\-} $flag {}] not recognized by vscode
+      dict set args -type [regsub - {\-} $flag {}]
     }
   }
 
@@ -1901,8 +1902,8 @@ namespace eval ICeWall {
       set line [regsub {\#.} $line {}]
       if {[llength $line] == 0} {continue}
       # debug "$line"
-      set line [regsub -all {\s+} $line " "]
-      set line [regsub -all {\s+$} $line ""]
+      #set line [regsub -all {\s+} $line " "] not recognized by vscode
+      #set line [regsub -all {\s+$} $line ""] not recognized by vscode
 
       set pad_name [lindex [split $line] 0]
       set signal_name [lindex [split $line] 1]
