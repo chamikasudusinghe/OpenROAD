@@ -211,6 +211,13 @@ getPdnGen()
   return openroad->getPdnGen();
 }
 
+pad::PadGen*
+getPadGen()
+{
+  OpenRoad *openroad = getOpenRoad();
+  return openroad->getPadGen();
+}
+
 stt::SteinerTreeBuilder*
 getSteinerTreeBuilder()
 {

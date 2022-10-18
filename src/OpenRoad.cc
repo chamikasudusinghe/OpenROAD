@@ -67,6 +67,7 @@
 #include "ord/InitOpenRoad.hh"
 #include "par/MakePartitionMgr.h"
 #include "pdn/MakePdnGen.hh"
+#include "pad/MakePadGen.hh"
 #include "ppl/MakeIoplacer.h"
 #include "psm/MakePDNSim.hh"
 #include "rcx/MakeOpenRCX.h"
@@ -139,6 +140,7 @@ OpenRoad::OpenRoad()
       pdnsim_(nullptr),
       partitionMgr_(nullptr),
       pdngen_(nullptr),
+      padgen_(nullptr),
       distributer_(nullptr),
       stt_builder_(nullptr),
       threads_(1)
@@ -168,6 +170,7 @@ OpenRoad::~OpenRoad()
   odb::dbDatabase::destroy(db_);
   deletePartitionMgr(partitionMgr_);
   deletePdnGen(pdngen_);
+  deletePdnGen(padgen_);
   deleteDistributed(distributer_);
   deleteSteinerTreeBuilder(stt_builder_);
   delete logger_;
@@ -220,6 +223,7 @@ void OpenRoad::init(Tcl_Interp* tcl_interp)
   antenna_checker_ = makeAntennaChecker();
   partitionMgr_ = makePartitionMgr();
   pdngen_ = makePdnGen();
+  padgen_ = makePadGen();
   distributer_ = makeDistributed();
   stt_builder_ = makeSteinerTreeBuilder();
 
@@ -254,6 +258,7 @@ void OpenRoad::init(Tcl_Interp* tcl_interp)
   initAntennaChecker(this);
   initPartitionMgr(this);
   initPdnGen(this);
+  initPadGen(this);
   initDistributed(this);
   initSteinerTreeBuilder(this);
 
