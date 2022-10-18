@@ -65,6 +65,10 @@ void FastRouteCore::ConvertToFull3DType2()
   short tmpX[MAXLEN], tmpY[MAXLEN], tmpL[MAXLEN];
 
   for (int netID = 0; netID < netCount(); netID++) {
+
+    if (nets_[netID]->is_routed)
+      continue;
+
     TreeEdge* treeedges = sttrees_[netID].edges;
     const int deg = sttrees_[netID].deg;
 
@@ -140,9 +144,11 @@ void FastRouteCore::netpinOrderInc()
 {
   tree_order_pv_.clear();
 
-  tree_order_pv_.resize(netCount());
-
   for (int j = 0; j < netCount(); j++) {
+
+    if (nets_[j]->is_routed)
+      continue;
+
     int xmin = BIG_INT;
     int totalLength = 0;
     TreeNode* treenodes = sttrees_[j].nodes;
@@ -157,9 +163,7 @@ void FastRouteCore::netpinOrderInc()
 
     float npvalue = (float) totalLength / d;
 
-    tree_order_pv_[j].npv = npvalue;
-    tree_order_pv_[j].treeIndex = j;
-    tree_order_pv_[j].minX = xmin;
+    tree_order_pv_.push_back({j, xmin,npvalue});
   }
 
   std::stable_sort(tree_order_pv_.begin(), tree_order_pv_.end(), comparePVMINX);
@@ -174,6 +178,10 @@ void FastRouteCore::fillVIA()
   int numVIAT2 = 0;
 
   for (int netID = 0; netID < netCount(); netID++) {
+
+    if (nets_[netID]->is_routed)
+      continue;
+
     TreeEdge* treeedges = sttrees_[netID].edges;
     int deg = sttrees_[netID].deg;
     TreeNode* treenodes = sttrees_[netID].nodes;
@@ -711,6 +719,10 @@ void FastRouteCore::layerAssignmentV4()
   TreeNode* treenodes;
 
   for (netID = 0; netID < netCount(); netID++) {
+
+    if (nets_[netID]->is_routed)
+      continue;
+
     treeedges = sttrees_[netID].edges;
     deg = sttrees_[netID].deg;
     for (edgeID = 0; edgeID < 2 * deg - 3; edgeID++) {
@@ -724,8 +736,12 @@ void FastRouteCore::layerAssignmentV4()
   }
   netpinOrderInc();
 
-  for (i = 0; i < netCount(); i++) {
+  for (i = 0; i < tree_order_pv_.size(); i++) {
     netID = tree_order_pv_[i].treeIndex;
+
+    if (nets_[netID]->is_routed)
+      continue;
+
     treeedges = sttrees_[netID].edges;
     treenodes = sttrees_[netID].nodes;
     deg = sttrees_[netID].deg;
@@ -847,6 +863,10 @@ void FastRouteCore::layerAssignment()
   TreeNode* treenodes;
 
   for (netID = 0; netID < netCount(); netID++) {
+
+    if (nets_[netID]->is_routed)
+      continue;
+
     treenodes = sttrees_[netID].nodes;
     deg = sttrees_[netID].deg;
 
@@ -894,6 +914,10 @@ void FastRouteCore::layerAssignment()
   }
 
   for (netID = 0; netID < netCount(); netID++) {
+
+    if (nets_[netID]->is_routed)
+      continue;
+
     treeedges = sttrees_[netID].edges;
     treenodes = sttrees_[netID].nodes;
     deg = sttrees_[netID].deg;
@@ -972,6 +996,10 @@ void FastRouteCore::checkRoute3D()
   TreeNode* treenodes;
 
   for (netID = 0; netID < netCount(); netID++) {
+
+    if (nets_[netID]->is_routed)
+      continue;
+
     treenodes = sttrees_[netID].nodes;
     deg = sttrees_[netID].deg;
 
@@ -1086,11 +1114,16 @@ void FastRouteCore::StNetOrder()
   tree_order_cong_.resize(netCount());
 
   i = 0;
-  for (j = 0; j < netCount(); j++) {
+  for (j = 0; j < netCount(); j++) { 
+
     stree = &(sttrees_[j]);
     d = stree->deg;
     tree_order_cong_[j].xmin = 0;
     tree_order_cong_[j].treeIndex = j;
+
+    // if the net is routed
+    if (nets_[j]->is_routed) continue;
+
     for (ind = 0; ind < 2 * d - 3; ind++) {
       treeedges = stree->edges;
       treeedge = &(treeedges[ind]);
@@ -1117,6 +1150,15 @@ void FastRouteCore::StNetOrder()
 
   std::stable_sort(
       tree_order_cong_.begin(), tree_order_cong_.end(), compareTEL);
+  
+  auto compareSlack = [this](const OrderTree a, const OrderTree b) {
+    const FrNet* net_a = nets_[a.treeIndex];
+    const FrNet* net_b = nets_[b.treeIndex];
+    return net_a->slack < net_b->slack;
+  };
+  // sort by slack after congestion sort
+  std::stable_sort(
+    tree_order_cong_.begin(), tree_order_cong_.end(), compareSlack);
 }
 
 void FastRouteCore::recoverEdge(int netID, int edgeID)
@@ -1181,11 +1223,13 @@ void FastRouteCore::recoverEdge(int netID, int edgeID)
       if (gridsX[i] == gridsX[i + 1])  // a vertical edge
       {
         ymin = std::min(gridsY[i], gridsY[i + 1]);
+        v_edges_[ymin][gridsX[i]].usage += net->edgeCost;
         v_edges_3D_[gridsL[i]][ymin][gridsX[i]].usage
           += net->layerEdgeCost(gridsL[i]);
       } else if (gridsY[i] == gridsY[i + 1])  // a horizontal edge
       {
         xmin = std::min(gridsX[i], gridsX[i + 1]);
+        h_edges_[gridsY[i]][xmin].usage += net->edgeCost;
         h_edges_3D_[gridsL[i]][gridsY[i]][xmin].usage
           += net->layerEdgeCost(gridsL[i]);
       }
@@ -1202,6 +1246,10 @@ void FastRouteCore::checkUsage()
   TreeEdge edge;
 
   for (netID = 0; netID < netCount(); netID++) {
+
+    if (nets_[netID]->is_routed)
+        continue;
+
     treeedges = sttrees_[netID].edges;
     deg = sttrees_[netID].deg;
 
@@ -1254,6 +1302,112 @@ void FastRouteCore::checkUsage()
   }
 }
 
+// This is a full comparison between edges used by the routing and
+// the usage in the h/v edges of the routing graph.  It is somewhat
+// expensive but helpful for finding usage errors.
+void FastRouteCore::verify2DEdgesUsage()
+{
+  multi_array<int, 2> v_edges(boost::extents[y_grid_ - 1][x_grid_]);
+  multi_array<int, 2> h_edges(boost::extents[y_grid_][x_grid_ - 1]);
+
+  for (int netID = 0; netID < netCount(); netID++) {
+    const TreeNode* treenodes = sttrees_[netID].nodes;
+    const TreeEdge* treeedges = sttrees_[netID].edges;
+    const int deg = sttrees_[netID].deg;
+    for (int edgeID = 0; edgeID < 2 * deg - 3; edgeID++) {
+      const TreeEdge* treeedge = &(treeedges[edgeID]);
+      if (treeedge->len == 0) {
+        continue;
+      }
+      const int n1 = treeedge->n1;
+      const int n2 = treeedge->n2;
+      const int x1 = treenodes[n1].x;
+      const int y1 = treenodes[n1].y;
+      const int x2 = treenodes[n2].x;
+      const int y2 = treenodes[n2].y;
+
+      const int ymin = std::min(y1, y2);
+      const int ymax = std::max(y1, y2);
+
+      if (treeedge->route.type == RouteType::LRoute) {
+        if (treeedge->route.xFirst) {  // horizontal first
+          for (int j = x1; j < x2; j++) {
+            h_edges[y1][j]++;
+          }
+          for (int j = ymin; j < ymax; j++) {
+            v_edges[j][x2]++;
+          }
+        } else {  // vertical first
+          for (int j = ymin; j < ymax; j++) {
+            v_edges[j][x1]++;
+          }
+          for (int j = x1; j < x2; j++) {
+            h_edges[y2][j]++;
+          }
+        }
+      } else if (treeedge->route.type == RouteType::ZRoute) {
+        const int Zpoint = treeedge->route.Zpoint;
+        if (treeedge->route.HVH)  // HVH
+        {
+          for (int i = x1; i < Zpoint; i++) {
+            h_edges[y1][i]++;
+          }
+          for (int i = Zpoint; i < x2; i++) {
+            h_edges[y2][i]++;
+          }
+          for (int i = ymin; i < ymax; i++) {
+            v_edges[i][Zpoint]++;
+          }
+        } else {  // VHV
+          if (y1 <= y2) {
+            for (int i = y1; i < Zpoint; i++) {
+              v_edges[i][x1]++;
+            }
+            for (int i = Zpoint; i < y2; i++) {
+              v_edges[i][x2]++;
+            }
+            for (int i = x1; i < x2; i++) {
+              h_edges[Zpoint][i]++;
+            }
+          } else {
+            for (int i = y2; i < Zpoint; i++) {
+              v_edges[i][x2]++;
+            }
+            for (int i = Zpoint; i < y1; i++) {
+              v_edges[i][x1]++;
+            }
+            for (int i = x1; i < x2; i++) {
+              h_edges[Zpoint][i]++;
+            }
+          }
+        }
+      }
+    }
+  }
+  for (int y = 0; y < y_grid_ - 1; ++y) {
+    for (int x = 0; x < x_grid_; ++x) {
+      if (v_edges[y][x] != v_edges_[y][x].est_usage) {
+        logger_->error(GRT,
+                       247,
+                       "v_edge mismatch {} vs {}",
+                       v_edges[y][x],
+                       v_edges_[y][x].est_usage);
+      }
+    }
+  }
+  for (int y = 0; y < y_grid_; ++y) {
+    for (int x = 0; x < x_grid_ - 1; ++x) {
+      if (h_edges[y][x] != h_edges_[y][x].est_usage) {
+        logger_->error(GRT,
+                       248,
+                       "h_edge mismatch {} vs {}",
+                       h_edges[y][x],
+                       h_edges_[y][x].est_usage);
+      }
+    }
+  }
+}
+
 void FastRouteCore::check2DEdgesUsage()
 {
   const int max_usage_multiplier = 40;
@@ -1264,8 +1418,14 @@ void FastRouteCore::check2DEdgesUsage()
   for (int i = 0; i < y_grid_; i++) {
     for (int j = 0; j < x_grid_ - 1; j++) {
       if (h_edges_[i][j].usage >= max_h_edge_usage) {
-        logger_->error(
-            GRT, 228, "Horizontal edge usage exceeds the maximum allowed.");
+        logger_->error(GRT,
+                       228,
+                       "Horizontal edge usage exceeds the maximum allowed. "
+                       "({}, {}) usage={} limit={}",
+                       i,
+                       j,
+                       h_edges_[i][j].usage,
+                       max_h_edge_usage);
       }
     }
   }
@@ -1274,8 +1434,14 @@ void FastRouteCore::check2DEdgesUsage()
   for (int i = 0; i < y_grid_ - 1; i++) {
     for (int j = 0; j < x_grid_; j++) {
       if (v_edges_[i][j].usage >= max_v_edge_usage) {
-        logger_->error(
-            GRT, 229, "Vertical edge usage exceeds the maximum allowed.");
+        logger_->error(GRT,
+                       229,
+                       "Vertical edge usage exceeds the maximum allowed. "
+                       "({}, {}) usage={} limit={}",
+                       i,
+                       j,
+                       v_edges_[i][j].usage,
+                       max_v_edge_usage);
       }
     }
   }
@@ -1454,6 +1620,10 @@ void FastRouteCore::copyRS(void)
 
   if (!sttrees_bk_.empty()) {
     for (netID = 0; netID < netCount(); netID++) {
+
+      if (nets_[netID]->is_routed)
+        continue;
+
       numEdges = 2 * sttrees_bk_[netID].deg - 3;
       for (edgeID = 0; edgeID < numEdges; edgeID++) {
         if (sttrees_bk_[netID].edges[edgeID].len > 0) {
@@ -1470,6 +1640,10 @@ void FastRouteCore::copyRS(void)
   sttrees_bk_.resize(netCount());
 
   for (netID = 0; netID < netCount(); netID++) {
+
+    if (nets_[netID]->is_routed)
+      continue;
+
     numNodes = 2 * sttrees_[netID].deg - 2;
     numEdges = 2 * sttrees_[netID].deg - 3;
 
@@ -1519,6 +1693,10 @@ void FastRouteCore::copyBR(void)
 
   if (!sttrees_bk_.empty()) {
     for (netID = 0; netID < netCount(); netID++) {
+
+      if (nets_[netID]->is_routed)
+        continue;
+
       numEdges = 2 * sttrees_[netID].deg - 3;
       for (edgeID = 0; edgeID < numEdges; edgeID++) {
         if (sttrees_[netID].edges[edgeID].len > 0) {
@@ -1534,6 +1712,10 @@ void FastRouteCore::copyBR(void)
     sttrees_.resize(netCount());
 
     for (netID = 0; netID < netCount(); netID++) {
+
+      if (nets_[netID]->is_routed)
+        continue;
+
       numNodes = 2 * sttrees_bk_[netID].deg - 2;
       numEdges = 2 * sttrees_bk_[netID].deg - 3;
 
@@ -1596,6 +1778,10 @@ void FastRouteCore::copyBR(void)
       }
     }
     for (netID = 0; netID < netCount(); netID++) {
+
+      if (nets_[netID]->is_routed)
+        continue;
+
       numEdges = 2 * sttrees_[netID].deg - 3;
       int edgeCost = nets_[netID]->edgeCost;
 
@@ -1627,6 +1813,10 @@ void FastRouteCore::freeRR(void)
   int netID, edgeID, numEdges;
   if (!sttrees_bk_.empty()) {
     for (netID = 0; netID < netCount(); netID++) {
+
+      if (nets_[netID]->is_routed)
+        continue;
+
       numEdges = 2 * sttrees_bk_[netID].deg - 3;
       for (edgeID = 0; edgeID < numEdges; edgeID++) {
         if (sttrees_bk_[netID].edges[edgeID].len > 0) {

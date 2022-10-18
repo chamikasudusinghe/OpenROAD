@@ -152,6 +152,7 @@ class GlobalRouter
   int getMaxRoutingLayer() const { return max_routing_layer_; }
   void setMinLayerForClock(const int min_layer);
   void setMaxLayerForClock(const int max_layer);
+  void setCriticalNetsPercentage(float critical_nets_percentage);
   unsigned getDbId();
   void addLayerAdjustment(int layer, float reduction_percentage);
   void addRegionAdjustment(int min_x,
@@ -168,6 +169,7 @@ class GlobalRouter
   void setMacroExtension(int macro_extension);
   void setPinOffset(int pin_offset);
   void printGrid();
+  int getMinRoutingLayer() const { return min_routing_layer_; }
 
   // flow functions
   void readGuides(const char* file_name);  // just for display
@@ -216,6 +218,9 @@ class GlobalRouter
   void setDebugRectilinearSTree(bool rectilinearSTree);
   void setDebugTree2D(bool tree2D);
   void setDebugTree3D(bool tree3D);
+  void setSttInputFilename(const char* file_name);
+
+  void saveSttInputFile(Net* net);
 
   // Highlight route in the gui.
   void highlightRoute(odb::dbNet* net, bool show_pin_locations);
@@ -249,6 +254,11 @@ class GlobalRouter
   void initRoutingLayers();
   std::vector<std::pair<int, int>> calcLayerPitches(int max_layer);
   void initRoutingTracks(int max_routing_layer);
+  void averageTrackPattern(odb::dbTrackGrid* grid,
+                           bool is_x,
+                           int& track_init,
+                           int& num_tracks,
+                           int& track_step);
   void setCapacities(int min_routing_layer, int max_routing_layer);
   void initNets(std::vector<Net*>& nets);
   bool makeFastrouteNet(Net* net);
@@ -276,6 +286,8 @@ class GlobalRouter
                                               odb::Point& pos_on_grid);
   void findPins(Net* net);
   void findPins(Net* net, std::vector<RoutePt>& pins_on_grid, int& root_idx);
+  float getNetSlack(Net* net);
+  void computeNetSlacks();
   odb::dbTechLayer* getRoutingLayerByIndex(int index);
   RoutingTracks getRoutingTracksByIndex(int layer);
   void addGuidesForLocalNets(odb::dbNet* db_net,
@@ -388,6 +400,7 @@ class GlobalRouter
   bool verbose_;
   int min_layer_for_clock_;
   int max_layer_for_clock_;
+  float critical_nets_percentage_;
 
   // variables for random grt
   int seed_;

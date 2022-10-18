@@ -81,13 +81,15 @@ struct DebugSetting
   bool tree2D_;
   bool tree3D_;
   bool isOn_;
+  std::string sttInputFileName_;
   DebugSetting()
       : net_(nullptr),
         steinerTree_(false),
         rectilinearSTree_(false),
         tree2D_(false),
         tree3D_(false),
-        isOn_(false)
+        isOn_(false),
+        sttInputFileName_("")
   {
   }
 };
@@ -123,12 +125,14 @@ class FastRouteCore
              int cost,
              int min_layer,
              int max_layer,
+             float slack,
              std::vector<int>* edge_cost_per_layer);
   void setNetDriverIdx(int netID, int root_idx);
   void addPin(int netID, int x, int y, int layer);
   void clearPins(int netID);
   void getNetId(odb::dbNet* db_net, int& net_id, bool& exists);
   void clearRoute(const int netID);
+  void clearNetRoute(const int netID);
   void initEdges();
   void setNumAdjustments(int nAdjustements);
   void addAdjustment(int x1,
@@ -204,6 +208,10 @@ class FastRouteCore
   void setDebugRectilinearSTree(bool rectiliniarSTree);
   void setDebugTree2D(bool tree2D);
   void setDebugTree3D(bool tree3D);
+  void setSttInputFilename(const char* file_name);
+  std::string getSttInputFileName();
+  const odb::dbNet* getDebugNet();
+  bool hasSaveSttInput();
 
  private:
   NetRouteMap getRoutes();
@@ -424,6 +432,7 @@ class FastRouteCore
                      const int netID);
   bool newRipup3DType3(const int netID, const int edgeID);
   void newRipupNet(const int netID);
+  void releaseNetResources(const int netID);
 
   // utility functions
   void printEdge(const int netID, const int edgeID);
@@ -452,6 +461,7 @@ class FastRouteCore
   void printEdge3D(int netID, int edgeID);
   void printTree3D(int netID);
   void check2DEdgesUsage();
+  void verify2DEdgesUsage();
   void layerAssignment();
   void copyBR(void);
   void copyRS(void);
@@ -484,7 +494,6 @@ class FastRouteCore
   int x_range_;
   int y_range_;
 
-  int seg_count_;
   int num_adjust_;
   int v_capacity_;
   int h_capacity_;
@@ -523,8 +532,6 @@ class FastRouteCore
   std::vector<int> xcor_;
   std::vector<int> ycor_;
   std::vector<int> dcor_;
-  std::vector<int> seglist_index_;  // the index for the segments for each net
-  std::vector<int> seglist_cnt_;    // the number of segements for each net
 
   std::vector<FrNet*> nets_;
   std::unordered_map<odb::dbNet*, int> db_net_id_map_;  // db net -> net id
@@ -535,7 +542,7 @@ class FastRouteCore
       gys_;  // the copy of xs for nets, used for second FLUTE
   std::vector<std::vector<int>>
       gs_;  // the copy of vertical sequence for nets, used for second FLUTE
-  std::vector<Segment> seglist_;
+  std::vector<std::vector<Segment>> seglist_; // indexed by netID, segID
   std::vector<OrderNetPin> tree_order_pv_;
   std::vector<OrderTree> tree_order_cong_;
 

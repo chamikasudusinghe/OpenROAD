@@ -80,6 +80,7 @@ Replace::Replace()
   routabilityRcK4_(0.0),
   routabilityMaxBloatIter_(1),
   routabilityMaxInflationIter_(4),
+  timingNetWeightMax_(1.9),
   timingDrivenMode_(true),
   routabilityDrivenMode_(true),
   uniformTargetDensityMode_(false),
@@ -89,7 +90,9 @@ Replace::Replace()
   gui_debug_pause_iterations_(10),
   gui_debug_update_iterations_(10),
   gui_debug_draw_bins_(false),
-  gui_debug_initial_(false) {
+  gui_debug_initial_(false),
+  gui_debug_inst_(nullptr)
+{
 };
 
 Replace::~Replace() {
@@ -150,6 +153,7 @@ void Replace::reset() {
 
   timingNetWeightOverflows_.clear();
   timingNetWeightOverflows_.shrink_to_fit();
+  timingNetWeightMax_ = 1.9;
 
   gui_debug_ = false;
   gui_debug_pause_iterations_ = 10;
@@ -253,7 +257,7 @@ void Replace::doInitialPlace()
   ip_->doBicgstabPlace();
 }
 
-void Replace::initNesterovPlace() {
+bool Replace::initNesterovPlace() {
   if( !pb_ ) {
     PlacerBaseVars pbVars;
     pbVars.padLeft = padLeft_;
@@ -262,7 +266,12 @@ void Replace::initNesterovPlace() {
 
     pb_ = std::make_shared<PlacerBase>(db_, pbVars, log_);
   }
-  
+
+  if (pb_->placeInsts().size() == 0) {
+    log_->warn(GPL, 136, "No placeable instances - skipping placement.");
+    return false;
+  }
+
   if( !nb_ ) {
     NesterovBaseVars nbVars;
     nbVars.targetDensity = density_;
@@ -301,6 +310,7 @@ void Replace::initNesterovPlace() {
   if( !tb_ ) {
     tb_ = std::make_shared<TimingBase>(nb_, rs_, log_);
     tb_->setTimingNetWeightOverflows(timingNetWeightOverflows_);
+    tb_->setTimingNetWeightMax(timingNetWeightMax_);
   }
 
   if( !np_ ) {
@@ -320,14 +330,18 @@ void Replace::initNesterovPlace() {
     npVars.debug_pause_iterations = gui_debug_pause_iterations_;
     npVars.debug_update_iterations = gui_debug_update_iterations_;
     npVars.debug_draw_bins = gui_debug_draw_bins_;
+    npVars.debug_inst = gui_debug_inst_;
 
     std::unique_ptr<NesterovPlace> np(new NesterovPlace(npVars, pb_, nb_, rb_, tb_, log_));
     np_ = std::move(np);
   }
+  return true;
 }
 
 int Replace::doNesterovPlace(int start_iter) {
-  initNesterovPlace();
+  if (!initNesterovPlace()) {
+    return 0;
+  }
   if (timingDrivenMode_)
     rs_->resizeSlackPreamble();
   return np_->doNesterovPlace(start_iter);
@@ -429,12 +443,14 @@ void
 Replace::setDebug(int pause_iterations,
                   int update_iterations,
                   bool draw_bins,
-                  bool initial) {
+                  bool initial,
+                  odb::dbInst* inst) {
   gui_debug_ = true;
   gui_debug_pause_iterations_ = pause_iterations;
   gui_debug_update_iterations_ = update_iterations;
   gui_debug_draw_bins_ = draw_bins;
   gui_debug_initial_ = initial;
+  gui_debug_inst_ = inst;
 }
 
 void
@@ -513,6 +529,11 @@ Replace::setPadRight(int pad) {
 void
 Replace::addTimingNetWeightOverflow(int overflow) {
   timingNetWeightOverflows_.push_back(overflow);
+}
+
+void
+Replace::setTimingNetWeightMax(float max) {
+  timingNetWeightMax_ = max;
 }
 
 }

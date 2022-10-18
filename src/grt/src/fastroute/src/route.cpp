@@ -218,30 +218,37 @@ void FastRouteCore::routeLAll(bool firstTime)
   if (firstTime) {  // no previous route
     // estimate congestion with 0.5+0.5 L
     for (int i = 0; i < netCount(); i++) {
-      for (int j = seglist_index_[i]; j < seglist_index_[i] + seglist_cnt_[i];
-           j++) {
-        estimateOneSeg(&seglist_[j]);
+
+      if (nets_[i]->is_routed)
+        continue;
+
+      for (auto& seg : seglist_[i]) {
+        estimateOneSeg(&seg);
       }
     }
     // L route
     for (int i = 0; i < netCount(); i++) {
-      for (int j = seglist_index_[i]; j < seglist_index_[i] + seglist_cnt_[i];
-           j++) {
+
+      if (nets_[i]->is_routed)
+        continue;
+
+      for (auto& seg : seglist_[i]) {
         // no need to reroute the H or V segs
-        if (seglist_[j].x1 != seglist_[j].x2
-            || seglist_[j].y1 != seglist_[j].y2)
-          routeSegLFirstTime(&seglist_[j]);
+        if (seg.x1 != seg.x2 || seg.y1 != seg.y2)
+          routeSegLFirstTime(&seg);
       }
     }
   } else {  // previous is L-route
     for (int i = 0; i < netCount(); i++) {
-      for (int j = seglist_index_[i]; j < seglist_index_[i] + seglist_cnt_[i];
-           j++) {
+
+      if (nets_[i]->is_routed)
+        continue;
+
+      for (auto& seg : seglist_[i]) {
         // no need to reroute the H or V segs
-        if (seglist_[j].x1 != seglist_[j].x2
-            || seglist_[j].y1 != seglist_[j].y2) {
-          ripupSegL(&seglist_[j]);
-          routeSegL(&seglist_[j]);
+        if (seg.x1 != seg.x2 || seg.y1 != seg.y2) {
+          ripupSegL(&seg);
+          routeSegL(&seg);
         }
       }
     }
@@ -396,11 +403,13 @@ void FastRouteCore::newrouteLAll(bool firstTime, bool viaGuided)
 {
   if (firstTime) {
     for (int i = 0; i < netCount(); i++) {
-      newrouteL(i, RouteType::NoRoute, viaGuided);  // do L-routing
+      if (!nets_[i]->is_routed)
+        newrouteL(i, RouteType::NoRoute, viaGuided);  // do L-routing
     }
   } else {
     for (int i = 0; i < netCount(); i++) {
-      newrouteL(i, RouteType::LRoute, viaGuided);
+      if (!nets_[i]->is_routed)
+        newrouteL(i, RouteType::LRoute, viaGuided);
     }
   }
 }
@@ -839,7 +848,8 @@ void FastRouteCore::newrouteZ(int netID, int threshold)
 void FastRouteCore::newrouteZAll(int threshold)
 {
   for (int i = 0; i < netCount(); i++) {
-    newrouteZ(i, threshold);  // ripup previous route and do Z-routing
+    if (!nets_[i]->is_routed)
+      newrouteZ(i, threshold);  // ripup previous route and do Z-routing
   }
 }
 
@@ -1056,6 +1066,10 @@ void FastRouteCore::routeMonotonic(int netID, int edgeID, int threshold)
 void FastRouteCore::routeMonotonicAll(int threshold)
 {
   for (int netID = 0; netID < netCount(); netID++) {
+
+    if (nets_[netID]->is_routed)
+      continue;
+
     for (int edgeID = 0; edgeID < sttrees_[netID].deg * 2 - 3; edgeID++) {
       routeMonotonic(
           netID,
@@ -1246,6 +1260,10 @@ void FastRouteCore::spiralRouteAll()
   std::queue<int> edgeQueue;
 
   for (int netID = 0; netID < netCount(); netID++) {
+
+    if (nets_[netID]->is_routed)
+      continue;
+
     treenodes = sttrees_[netID].nodes;
     deg = sttrees_[netID].deg;
 
@@ -1292,6 +1310,10 @@ void FastRouteCore::spiralRouteAll()
   }
 
   for (int netID = 0; netID < netCount(); netID++) {
+
+    if (nets_[netID]->is_routed)
+        continue;
+
     treeedges = sttrees_[netID].edges;
     treenodes = sttrees_[netID].nodes;
     deg = sttrees_[netID].deg;
@@ -1317,6 +1339,10 @@ void FastRouteCore::spiralRouteAll()
   }
 
   for (int netID = 0; netID < netCount(); netID++) {
+
+    if (nets_[netID]->is_routed)
+        continue;
+
     newRipupNet(netID);
 
     treeedges = sttrees_[netID].edges;
@@ -1371,6 +1397,10 @@ void FastRouteCore::spiralRouteAll()
   }
 
   for (int netID = 0; netID < netCount(); netID++) {
+
+    if (nets_[netID]->is_routed)
+        continue;
+
     treenodes = sttrees_[netID].nodes;
     deg = sttrees_[netID].deg;
 
@@ -1692,6 +1722,10 @@ void FastRouteCore::routeLVAll(int threshold, int expand, float logis_cof)
   multi_array<float, 2> d2(boost::extents[y_range_][x_range_]);
 
   for (int netID = 0; netID < netCount(); netID++) {
+
+    if (nets_[netID]->is_routed)
+      continue;
+
     int numEdges = 2 * sttrees_[netID].deg - 3;
     for (int edgeID = 0; edgeID < numEdges; edgeID++) {
       routeLVEnew(netID,

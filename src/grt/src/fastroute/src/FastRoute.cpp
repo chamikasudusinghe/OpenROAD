@@ -59,7 +59,6 @@ FastRouteCore::FastRouteCore(odb::dbDatabase* db,
       layer_orientation_(0),
       x_range_(0),
       y_range_(0),
-      seg_count_(0),
       num_adjust_(0),
       v_capacity_(0),
       h_capacity_(0),
@@ -105,8 +104,6 @@ void FastRouteCore::clear()
   h_edges_.resize(boost::extents[0][0]);
   v_edges_.resize(boost::extents[0][0]);
   seglist_.clear();
-  seglist_index_.clear();
-  seglist_cnt_.clear();
 
   gxs_.clear();
   gys_.clear();
@@ -169,7 +166,8 @@ void FastRouteCore::clearNets()
   for (FrNet* net : nets_)
     delete net;
   nets_.clear();
-  seg_count_ = 0;
+  seglist_.clear();
+  db_net_id_map_.clear();
 }
 
 void FastRouteCore::setGridsAndLayers(int x, int y, int nLayers)
@@ -266,28 +264,40 @@ int FastRouteCore::addNet(odb::dbNet* db_net,
                           int cost,
                           int min_layer,
                           int max_layer,
+                          float slack,
                           std::vector<int>* edge_cost_per_layer)
 {
-  FrNet* net = new FrNet;
-  nets_.push_back(net);
-  int netID = nets_.size() - 1;
-  net->db_net = db_net;
+  int netID;
+  bool exists;
+  FrNet* net;
+  getNetId(db_net, netID, exists);
+  if (exists) {
+    net = nets_[netID];
+   
+    clearNetRoute(netID);
+
+    net->pinX.clear();
+    net->pinY.clear();
+    net->pinL.clear();
+    seglist_[netID].clear();
+  }
+  else {
+    net = new FrNet;
+    nets_.push_back(net);
+    netID = nets_.size() - 1;
+    net->db_net = db_net;
+    db_net_id_map_[db_net] = netID;
+    // at most (2*num_pins-2) nodes -> (2*num_pins-3) segs_ for a net
+  }
+  net->is_routed = false;
   net->deg = num_pins;
   net->is_clock = is_clock;
   net->driver_idx = driver_idx;
   net->edgeCost = cost;
   net->minLayer = min_layer;
   net->maxLayer = max_layer;
+  net->slack = slack;
   net->edge_cost_per_layer = edge_cost_per_layer;
-
-  db_net_id_map_[db_net] = netID;
-
-  // at most (2*num_pins-2) nodes -> (2*num_pins-3) segs_ for a net
-  seg_count_ += 2 * num_pins - 3;
-
-  // the end pointer of the seglist
-  seglist_index_.resize(nets_.size() + 1);
-  seglist_index_[nets_.size()] = seg_count_;
 
   return netID;
 }
@@ -307,6 +317,18 @@ void FastRouteCore::getNetId(odb::dbNet* db_net, int& net_id, bool& exists)
 void FastRouteCore::clearRoute(const int netID)
 {
   newRipupNet(netID);
+}
+
+void FastRouteCore::clearNetRoute(const int netID)
+{
+  // clear used resources for the net route
+  releaseNetResources(netID);
+
+  // clear stree
+  delete[] sttrees_[netID].nodes;
+  delete[] sttrees_[netID].edges;
+  sttrees_[netID].nodes = nullptr;
+  sttrees_[netID].edges = nullptr;
 }
 
 void FastRouteCore::initEdges()
@@ -740,8 +762,7 @@ void FastRouteCore::initAuxVar()
 void FastRouteCore::initNetAuxVars()
 {
   int node_count = netCount();
-  seglist_cnt_.resize(node_count);
-  seglist_.resize(seg_count_);
+  seglist_.resize(node_count);
   sttrees_.resize(node_count);
   gxs_.resize(node_count);
   gys_.resize(node_count);
@@ -752,6 +773,11 @@ NetRouteMap FastRouteCore::getRoutes()
 {
   NetRouteMap routes;
   for (int netID = 0; netID < netCount(); netID++) {
+
+    if (nets_[netID]->is_routed)
+      continue;
+
+    nets_[netID]->is_routed = true;
     odb::dbNet* db_net = nets_[netID]->db_net;
     GRoute& route = routes[db_net];
     std::unordered_set<GSegment, GSegmentHash> net_segs;
@@ -869,7 +895,7 @@ NetRouteMap FastRouteCore::run()
   gen_brk_RSMT(false, false, false, false, noADJ);
   routeLAll(true);
   gen_brk_RSMT(true, true, true, false, noADJ);
-
+  
   getOverflow2D(&maxOverflow);
   newrouteLAll(false, true);
   getOverflow2D(&maxOverflow);
@@ -942,7 +968,7 @@ NetRouteMap FastRouteCore::run()
   // debug mode Rectilinear Steiner Tree before overflow iterations
   if (debug_->isOn_ && debug_->rectilinearSTree_) {
     for (int netID = 0; netID < netCount(); netID++) {
-      if (nets_[netID]->db_net == debug_->net_) {
+      if (nets_[netID]->db_net == debug_->net_ && !nets_[netID]->is_routed) {
         StTreeVisualization(sttrees_[netID], nets_[netID], false);
       }
     }
@@ -1193,7 +1219,7 @@ NetRouteMap FastRouteCore::run()
   // Debug mode Tree 2D after overflow iterations
   if (debug_->isOn_ && debug_->tree2D_) {
     for (int netID = 0; netID < netCount(); netID++) {
-      if (nets_[netID]->db_net == debug_->net_) {
+      if (nets_[netID]->db_net == debug_->net_ && !nets_[netID]->is_routed) {
         StTreeVisualization(sttrees_[netID], nets_[netID], false);
       }
     }
@@ -1235,7 +1261,7 @@ NetRouteMap FastRouteCore::run()
   // Debug mode Tree 3D after layer assignament
   if (debug_->isOn_ && debug_->tree3D_) {
     for (int netID = 0; netID < netCount(); netID++) {
-      if (nets_[netID]->db_net == debug_->net_) {
+      if (nets_[netID]->db_net == debug_->net_ && !nets_[netID]->is_routed) {
         StTreeVisualization(sttrees_[netID], nets_[netID], true);
       }
     }
@@ -1554,6 +1580,22 @@ void FastRouteCore::setDebugNet(const odb::dbNet* net)
 void FastRouteCore::setDebugRectilinearSTree(bool rectiliniarSTree)
 {
   debug_->rectilinearSTree_ = rectiliniarSTree;
+}
+void FastRouteCore::setSttInputFilename(const char* file_name)
+{
+  debug_->sttInputFileName_ = std::string(file_name);
+}
+bool FastRouteCore::hasSaveSttInput()
+{
+  return (debug_->sttInputFileName_ != "");
+}
+std::string FastRouteCore::getSttInputFileName()
+{
+  return debug_->sttInputFileName_;
+}
+const odb::dbNet* FastRouteCore::getDebugNet()
+{
+  return debug_->net_;
 }
 
 void FastRouteCore::steinerTreeVisualization(const stt::Tree& stree, FrNet* net)
